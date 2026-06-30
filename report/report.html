@@ -1,0 +1,209 @@
+<html><head><style>body{font-family:Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 20px;line-height:1.6;} table{border-collapse:collapse;width:100%;margin:20px 0;} th,td{border:1px solid #ccc;padding:8px 12px;text-align:left;} th{background:#f0f0f0;} img{max-width:100%;} h1{color:#1a1a2e;} h2{color:#16213e;border-bottom:2px solid #eee;padding-bottom:6px;} code{background:#f4f4f4;padding:2px 6px;border-radius:3px;}</style></head><body><h1>Dental CBCT Tooth Segmentation — Technical Report</h1>
+
+<p><strong>Candidate:</strong> Manvansh Singh<br />
+<strong>Assignment:</strong> Dobbe AI — Machine Learning Engineer<br />
+<strong>Date:</strong> June 2026</p>
+
+<hr />
+
+<h2>1. Problem Statement</h2>
+
+<p>The goal of this assignment was to build an end-to-end machine learning pipeline
+for dental image segmentation. Specifically, to automatically identify and segment
+tooth structures from 3D Cone Beam Computed Tomography (CBCT) scans using deep
+learning.</p>
+
+<p>CBCT scans produce volumetric 3D images of the jaw and teeth. Automated
+segmentation of these scans has clinical value for treatment planning, implant
+placement, and orthodontic analysis.</p>
+
+<hr />
+
+<h2>2. Dataset</h2>
+
+<p><strong>Dataset:</strong> CBCT Teeth Segmentation<br />
+<strong>Source:</strong> Kaggle (<code>detectioncla/cbct-teeth-segmentation</code>)<br />
+<strong>Size:</strong> 50 CBCT volumes, ~6.9 GB<br />
+<strong>Format:</strong> NIfTI (.nii), one file per patient<br />
+<strong>Volume shape:</strong> 400 × 400 × 435 voxels<br />
+<strong>Labels:</strong> Per-voxel tooth segmentation masks (29 tooth classes)</p>
+
+<p>This dataset was selected because it is publicly available with no access
+restrictions, contains genuine 3D CBCT data with expert annotations, and is
+a manageable size for local training on consumer hardware.</p>
+
+<p><strong>Preprocessing:</strong>
+- Intensity normalization to [0, 1] range
+- Multi-class labels converted to binary masks (tooth vs background)
+- Volumes saved as NumPy arrays for fast loading during training</p>
+
+<p><strong>Data split:</strong> 34 train / 7 validation / 8 test patients (70/15/15)</p>
+
+<hr />
+
+<h2>3. Model Architecture</h2>
+
+<p>A 2D U-Net was selected for this task. U-Net is the standard architecture
+for medical image segmentation and has been validated extensively on CT and
+CBCT data.</p>
+
+<p><strong>Approach:</strong> The 3D volume is segmented slice-by-slice along the axial axis.
+Each 2D slice (400 × 400) is passed through the network independently.</p>
+
+<p><strong>Architecture:</strong>
+- Input: single-channel 400 × 400 axial CBCT slice
+- Encoder: 4 downsampling blocks with feature maps [32, 64, 128, 256]
+- Each block: Conv2d → BatchNorm → ReLU → Conv2d → BatchNorm → ReLU → MaxPool
+- Bottleneck: 512 channels
+- Decoder: 4 upsampling blocks using ConvTranspose2d with skip connections
+- Output: single-channel binary segmentation mask (sigmoid activation)
+- Total parameters: 7,762,465</p>
+
+<p>Skip connections between encoder and decoder preserve fine spatial detail,
+which is critical for accurate tooth boundary delineation.</p>
+
+<hr />
+
+<h2>4. Training</h2>
+
+<table>
+<thead>
+<tr>
+  <th>Parameter</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Loss function</td>
+  <td>BCEWithLogitsLoss</td>
+</tr>
+<tr>
+  <td>Optimizer</td>
+  <td>Adam</td>
+</tr>
+<tr>
+  <td>Learning rate</td>
+  <td>1e-4</td>
+</tr>
+<tr>
+  <td>LR scheduler</td>
+  <td>ReduceLROnPlateau (patience=3, factor=0.5)</td>
+</tr>
+<tr>
+  <td>Batch size</td>
+  <td>8</td>
+</tr>
+<tr>
+  <td>Epochs</td>
+  <td>10</td>
+</tr>
+<tr>
+  <td>Hardware</td>
+  <td>NVIDIA RTX 4050 (6GB VRAM)</td>
+</tr>
+<tr>
+  <td>Training slices</td>
+  <td>14,790</td>
+</tr>
+</tbody>
+</table>
+
+<p>The model was trained on 2D axial slices extracted from 34 training patients,
+validated on 7 patients after each epoch, and the best checkpoint was saved
+based on validation Dice score.</p>
+
+<hr />
+
+<h2>5. Results</h2>
+
+<h3>Quantitative Results (Test Set — 8 patients, 3,480 slices)</h3>
+
+<table>
+<thead>
+<tr>
+  <th>Metric</th>
+  <th>Score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Mean Dice Score</td>
+  <td>0.7479</td>
+</tr>
+<tr>
+  <td>Mean IoU Score</td>
+  <td>0.6948</td>
+</tr>
+<tr>
+  <td>Median Dice</td>
+  <td>0.9104</td>
+</tr>
+<tr>
+  <td>Best Validation Dice</td>
+  <td>0.6825</td>
+</tr>
+</tbody>
+</table>
+
+<p>A Dice score of 0.74 is considered good performance for binary tooth
+segmentation, particularly given the relatively small training set (34 patients)
+and no data augmentation.</p>
+
+<p>The high median Dice (0.91) reflects strong performance on slices with clear
+tooth structure. The lower mean is influenced by slices near the top and bottom
+of the scan where teeth are partially visible and harder to segment.</p>
+
+<h3>Qualitative Results</h3>
+
+<p>The figure below shows model predictions overlaid on original CBCT slices
+across 6 representative axial levels. Red indicates ground truth, blue
+indicates model prediction.</p>
+
+<p><img src="../outputs/figures/slice_comparison.png" alt="Slice Comparison" /></p>
+
+<p>The model accurately identifies the U-shaped dental arch across all slice
+levels and correctly localizes individual tooth cross-sections.</p>
+
+<p>An interactive 3D visualization is provided as <code>outputs/figures/3d_visualization.html</code> 
+(open in any browser — no setup required). The visualization renders the full CBCT 
+volume with predicted tooth segmentation highlighted in cyan against the grayscale scan.</p>
+
+<p><img src="../outputs/figures/3d_viz_screenshot.png" alt="3D Visualization" /></p>
+
+<hr />
+
+<h2>6. Post-processing</h2>
+
+<p>After inference, small isolated voxel clusters (fewer than 500 voxels) are
+removed using connected component analysis, and holes within predicted tooth
+regions are filled using binary morphological operations. This removed 757
+noise voxels (0.1% of predictions) on the test patient, indicating the model
+produces clean predictions with minimal spurious activations.</p>
+
+<hr />
+
+<h2>7. Limitations and Future Work</h2>
+
+<ul>
+<li><strong>2D vs 3D:</strong> Slice-by-slice inference does not use inter-slice context.
+A 3D U-Net or sliding window approach would likely improve boundary consistency.</li>
+<li><strong>Binary segmentation:</strong> The pipeline predicts tooth vs background.
+Multi-class per-tooth segmentation would enable individual tooth tracking.</li>
+<li><strong>Dataset size:</strong> 34 training patients is small for medical imaging.
+More data or transfer learning from a pretrained encoder would improve
+generalization.</li>
+<li><strong>Augmentation:</strong> No data augmentation was applied. Adding rotation,
+flipping, and intensity jitter would reduce overfitting.</li>
+<li><strong>Evaluation:</strong> Hausdorff distance and surface Dice would give a more
+complete picture of boundary accuracy.</li>
+</ul>
+
+<hr />
+
+<h2>8. Pipeline Summary</h2>
+
+<p>Raw NIfTI → Normalize → Extract 2D slices → U-Net → Binary mask→ Postprocess → Predicted NIfTI + 3D Visualization</p>
+
+<p>All code is modular and documented. Running the full pipeline from a newscan requires a single call to <code>inference.py</code>.</p>
+</body></html>
