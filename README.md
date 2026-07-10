@@ -1,122 +1,144 @@
-# Dental CBCT Tooth Segmentation Pipeline
+# CBCT Dental Segmentation
 
-End-to-end deep learning pipeline for automated tooth segmentation on 3D Cone Beam CT (CBCT) scans, built for the Dobbe AI ML assignment.
+Automated tooth segmentation from CBCT (Cone-Beam CT) scans using a 2D U-Net, wrapped in a FastAPI + vanilla JS web app for interactive 3D inference.
 
-## Results
+**Test Dice: 0.7479 · Test IoU: 0.6948 · 48 patients · 14,790 training slices**
 
-| Metric | Score |
-|--------|-------|
-| Mean Dice Score | 0.7479 |
-| Mean IoU Score | 0.6948 |
-| Median Dice | 0.9104 |
-| Best Val Dice (training) | 0.6825 |
+---
 
-## Project Structure
+## What it does
+
+Upload a raw `.nii` CBCT scan → the model slices the volume, runs each slice through a trained U-Net on GPU, stitches predictions back into 3D, cleans up noise, and returns:
+
+- An interactive 3D visualization (rotate/zoom, toggle CBCT scan on/off)
+- A slice-by-slice comparison report (original vs. predicted)
+- A downloadable predicted mask (`.nii`) and report (`.png`)
+- Live, real progress updates while it processes (not a fake loading bar)
+
+## Features
+
+- 2D U-Net (7.7M params) trained on 48 patients / 14,790 axial slices
+- FastAPI backend with background job processing and live status polling
+- Interactive Plotly 3D viewer with a scan/teeth visibility toggle
+- Slice comparison report generation (matplotlib)
+- File validation, friendly error handling, backend-connectivity check
+- Zero cloud dependency — runs entirely locally on your GPU
+
+## Project structure
+
+```
 dental-segmentation/
-
+├── app/
+│   ├── main.py                  # FastAPI backend
+│   ├── static/
+│   │   ├── index.html
+│   │   ├── style.css
+│   │   ├── app.js
+│   │   └── results/             # per-job outputs (viz, report, prediction)
+│   └── uploads/                 # temp storage for uploaded scans
 ├── data/
-│   ├── raw/              ← original NIfTI scans
-│   └── processed/        ← preprocessed .npy volumes
+│   ├── raw/CBCT_upload/images/  # raw .nii scans
+│   └── processed/               # preprocessed .npy slices
 ├── src/
-│   ├── dataset.py        ← data loading and train/val/test splits
-│   ├── model.py          ← U-Net architecture (7.76M parameters)
-│   ├── train.py          ← training loop with Dice loss
-│   ├── evaluate.py       ← test set evaluation (Dice, IoU)
-│   ├── postprocess.py    ← noise removal and hole filling
-│   ├── visualize.py      ← 2D slice grid + interactive 3D HTML
-│   └── inference.py      ← run model on any new NIfTI scan
+│   ├── dataset.py                # PyTorch Dataset + train/val/test split
+│   ├── model.py                  # 2D U-Net architecture
+│   ├── train.py                  # training loop
+│   ├── evaluate.py               # test-set Dice/IoU evaluation
+│   ├── postprocess.py            # noise removal, hole filling
+│   ├── visualize.py               # inference + 3D plotly rendering
+│   └── inference.py              # standalone .nii → .nii inference
 ├── outputs/
-│   ├── checkpoints/      ← best_model.pth
-│   ├── predictions/      ← predicted segmentation NIfTI files
-│   └── figures/          ← slice_comparison.png, 3d_visualization.html
-├── report/               ← PDF report
-└── requirements.txt
-
+│   ├── checkpoints/best_model.pth
+│   └── figures/
+├── rank_test_patients.py         # ranks test patients by their own Dice score
+├── requirements.txt
+└── README.md
+```
 
 ## Setup
 
-**Requirements:** Python 3.11, NVIDIA GPU with CUDA
+**1. Create and activate a virtual environment** (Python 3.11):
 
-```bash
-# Create virtual environment
-py -3.11 -m venv venv
-venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-pip install nibabel scipy scikit-image matplotlib plotly tqdm scikit-learn
+```
+python -m venv venv
 ```
 
-## Dataset
-
-CBCT Teeth Segmentation dataset from Kaggle (`detectioncla/cbct-teeth-segmentation`).
-50 CBCT volumes in NIfTI format with per-tooth segmentation labels.
-Split: 34 train / 7 validation / 8 test patients.
-
-```bash
-# Download via Kaggle API
-kaggle datasets download detectioncla/cbct-teeth-segmentation -p data/raw --unzip
+Windows Command Prompt:
+```
+venv\Scripts\activate
 ```
 
-## Preprocessing
+Windows PowerShell:
+```
+.\venv\Scripts\Activate.ps1
+```
+> If PowerShell blocks the script with an execution-policy error, run this once first:
+> `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
 
-Converts raw NIfTI volumes to numpy arrays, normalizes intensities to [0,1], and binarizes labels (tooth vs background):
+**2. Install PyTorch with CUDA first** (see note in `requirements.txt` — plain PyPI won't give you the CUDA build):
 
-```bash
-# Run from explore.ipynb or adapt the preprocessing cell
+```
+pip install torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 ```
 
-## Training
+**3. Install the rest:**
 
-```bash
-python src/train.py
+```
+pip install -r requirements.txt
 ```
 
-Trains a 2D U-Net slice-by-slice on axial CBCT slices. Hyperparameters:
-- Batch size: 8
-- Epochs: 10
-- Learning rate: 1e-4 (with ReduceLROnPlateau)
-- Loss: BCEWithLogitsLoss
+> **Windows drive-switching gotcha:** if your project is on a different drive than your terminal's current one, plain `cd D:\path` won't actually switch drives in Command Prompt — use `cd /d D:\path` instead. In PowerShell, plain `cd D:\path` works fine.
 
-## Evaluation
+## Running the app
 
-```bash
-python src/evaluate.py
+```
+cd app
+python main.py
 ```
 
-## Visualization
+Once you see `Application startup complete`, open **http://127.0.0.1:8000** in your browser, upload a `.nii` scan, and click **Run Segmentation**.
 
-```bash
-python src/visualize.py
+A scan typically takes 30–50 seconds end to end on an RTX 4050 (6GB VRAM).
+
+## Finding a good demo scan
+
+Run this to rank your test-set patients by their own Dice score (useful for picking a clean scan for a live demo):
+
+```
+python rank_test_patients.py
 ```
 
-Generates:
-- `outputs/figures/slice_comparison.png` — 6-slice grid showing original, ground truth, and prediction
-- `outputs/figures/3d_visualization.html` — interactive 3D render of scan + predicted teeth
+## API reference
 
-## Inference on New Scans
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/predict` | POST | Upload a `.nii` scan, starts a background inference job, returns a `job_id` |
+| `/status/{job_id}` | GET | Live processing status — current step + progress % |
+| `/download/nii/{job_id}` | GET | Download the predicted segmentation mask (`.nii`) |
+| `/download/report/{job_id}` | GET | Download the slice-comparison report (`.png`) |
+| `/health` | GET | Backend/model status, used for connectivity checks |
 
-```bash
-python src/inference.py
-```
+## Model
 
-Or use programmatically:
+| | |
+|---|---|
+| Architecture | 2D U-Net, 7.7M parameters |
+| Input | 400×400 single-channel grayscale slice |
+| Output | 400×400 binary mask (0 = background, 1 = tooth) |
+| Loss / Optimizer | BCEWithLogitsLoss / Adam |
+| Epochs | 10 |
+| Training data | 48 patients, 14,790 slices |
+| Test Dice | 0.7479 (mean), range 0.6172–0.8864 across test patients |
+| Test IoU | 0.6948 |
 
-```python
-from src.inference import run_inference
-run_inference(
-    nii_path="path/to/scan.nii",
-    checkpoint_path="outputs/checkpoints/best_model.pth",
-    output_dir="outputs/predictions"
-)
-```
+## Known limitations
 
-## Model Architecture
+Predictions are made independently per 2D slice, so there's no explicit constraint enforcing consistency between adjacent slices — this can cause fragmented (disconnected) predictions in 3D, more noticeably on lower-scoring scans. A 3D U-Net or a slice-consistency loss term would likely address this; not implemented here due to GPU memory constraints (6GB VRAM).
 
-2D U-Net with encoder-decoder structure and skip connections:
-- Input: single-channel 400×400 axial CBCT slice
-- Encoder: 4 downsampling blocks [32, 64, 128, 256 channels]
-- Bottleneck: 512 channels
-- Decoder: 4 upsampling blocks with skip connections
-- Output: single-channel binary segmentation mask
-- Parameters: 7,762,465
+## Tech stack
+
+Python, PyTorch, FastAPI, Uvicorn, Plotly, Matplotlib, NiBabel, vanilla HTML/CSS/JS.
+
+## Author
+
+Manvansh Singh — B.Tech Robotics & AI, Chandigarh Engineering College, CGC Landran

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Dental CBCT Segmentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- Backend connectivity banner -->
+  <div id="offlineBanner" class="offline-banner hidden">
+    <span>⚠ Backend server not reachable — make sure <code>python main.py</code> is running at 127.0.0.1:8000.</span>
+  </div>
+
+  <div class="container">
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="scanline-field" aria-hidden="true"></div>
+      <div class="hero-inner">
+        <p class="eyebrow">AUTOMATED SEGMENTATION REPORT</p>
+        <h1 id="projectName">3D Dental CBCT Segmentation</h1>
+        <p class="tagline" id="projectTagline">Automated tooth segmentation from CBCT scans, powered by a 2D U-Net.</p>
+
+        <div class="readout-panel">
+          <div class="readout-item">
+            <span class="readout-label">TEST DICE</span>
+            <span class="readout-value">0.7479</span>
+          </div>
+          <div class="readout-item">
+            <span class="readout-label">TEST IOU</span>
+            <span class="readout-value">0.6948</span>
+          </div>
+          <div class="readout-item">
+            <span class="readout-label">ARCHITECTURE</span>
+            <span class="readout-value">2D U-NET</span>
+          </div>
+          <div class="readout-item">
+            <span class="readout-label">DEVICE</span>
+            <span class="readout-value" id="deviceReadout">—</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ABOUT -->
+    <section class="panel about-panel">
+      <h2 class="panel-title">How it works</h2>
+      <p class="about-text">
+        Upload a raw CBCT scan (<code>.nii</code>). The model slices the volume, runs each
+        slice through a trained U-Net, stitches the predictions back into 3D, then cleans up
+        noise before rendering an interactive segmentation you can rotate and inspect.
+      </p>
+      <ol class="flow-steps">
+        <li><span class="flow-num">1</span><span>Upload a raw <code>.nii</code> CBCT volume</span></li>
+        <li><span class="flow-num">2</span><span>U-Net runs inference slice-by-slice on GPU</span></li>
+        <li><span class="flow-num">3</span><span>Noise removal + hole-filling cleans the mask</span></li>
+        <li><span class="flow-num">4</span><span>Interactive 3D result + downloadable report</span></li>
+      </ol>
+    </section>
+
+    <!-- MODEL INFO -->
+    <section class="panel model-info-panel">
+      <h2 class="panel-title">Model specification</h2>
+      <div class="spec-grid" id="specGrid">
+        <div class="spec-row"><span>Architecture</span><span>2D U-Net · 7.7M parameters</span></div>
+        <div class="spec-row"><span>Input</span><span>400 × 400 grayscale slice</span></div>
+        <div class="spec-row"><span>Training set</span><span>48 patients · 14,790 slices</span></div>
+        <div class="spec-row"><span>Epochs</span><span>10</span></div>
+        <div class="spec-row"><span>Loss / Optimizer</span><span>BCEWithLogitsLoss · Adam</span></div>
+        <div class="spec-row"><span>Test Dice / IoU</span><span>0.7479 / 0.6948</span></div>
+      </div>
+    </section>
+
+    <!-- UPLOAD -->
+    <section class="panel upload-panel" id="uploadCard">
+      <h2 class="panel-title">Run a scan</h2>
+
+      <label for="fileInput" class="file-label" id="fileLabel">
+        <span id="fileLabelText">Choose a .nii CBCT scan</span>
+        <input type="file" id="fileInput" accept=".nii,.gz" hidden />
+      </label>
+      <p class="field-error hidden" id="fileValidationError"></p>
+
+      <button id="submitBtn" disabled>Run Segmentation</button>
+
+      <div id="progressWrap" class="hidden">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        <p id="progressLabel">Uploading… 0%</p>
+      </div>
+    </section>
+
+    <!-- PROCESSING CHECKLIST -->
+    <section class="panel checklist-panel hidden" id="checklistCard">
+      <h2 class="panel-title">Processing</h2>
+      <ul class="checklist" id="checklist">
+        <li data-step="loading"><span class="check-icon"></span><span class="check-label">Loading scan</span></li>
+        <li data-step="inference"><span class="check-icon"></span><span class="check-label">Running inference on GPU</span><span class="check-pct" id="inferencePct"></span></li>
+        <li data-step="postprocess"><span class="check-icon"></span><span class="check-label">Removing noise, filling holes</span></li>
+        <li data-step="report"><span class="check-icon"></span><span class="check-label">Generating slice report</span></li>
+        <li data-step="visualization"><span class="check-icon"></span><span class="check-label">Building 3D visualization</span></li>
+        <li data-step="saving"><span class="check-icon"></span><span class="check-label">Saving results</span></li>
+      </ul>
+    </section>
+
+    <!-- FRIENDLY ERROR -->
+    <section class="panel error-panel hidden" id="errorCard">
+      <div class="error-icon">✕</div>
+      <h2 class="panel-title">Something went wrong</h2>
+      <p id="errorMessage">The scan couldn't be processed.</p>
+      <button id="retryBtn">Try again</button>
+    </section>
+
+    <!-- RESULTS -->
+    <section class="panel results-panel hidden" id="resultsCard">
+      <h2 class="panel-title">Results</h2>
+
+      <div class="stats-row" id="statsRow">
+        <div class="stat">
+          <div class="label">Volume Shape</div>
+          <div class="value" id="statShape">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">Predicted Tooth Voxels</div>
+          <div class="value" id="statVoxels">0</div>
+        </div>
+        <div class="stat">
+          <div class="label">Processing Time</div>
+          <div class="value" id="statTime">0s</div>
+        </div>
+      </div>
+
+      <div class="viz-frame-wrap">
+        <iframe id="vizFrame" title="3D Tooth Segmentation"></iframe>
+      </div>
+      <p class="viz-hint">Use the buttons inside the 3D view to toggle the CBCT scan on or off.</p>
+
+      <h3 class="subsection-title">Slice comparison report</h3>
+      <img id="reportImg" class="report-image" alt="Slice comparison report" />
+
+      <div class="download-row">
+        <a id="downloadNii" class="download-btn" download>Download prediction (.nii)</a>
+        <a id="downloadReport" class="download-btn secondary" download>Download report (.png)</a>
+      </div>
+
+      <button id="resetBtn" class="reset-btn">Try another scan</button>
+    </section>
+
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

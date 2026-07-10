@@ -1,0 +1,25 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Raw & processed data (too large for GitHub, 100MB/file limit)
+data/raw/
+data/processed/
+
+# Runtime-generated app files
+app/uploads/
+app/static/results/
+
+# Prediction outputs (same volume size as raw scans, can exceed 100MB)
+outputs/predictions/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Leftover scratch/verification folder
+zip_check/
